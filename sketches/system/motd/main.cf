@@ -1,0 +1,8 @@
+bundle agent motd(params)
+{
+  vars:
+      "params_str" string => format("%S", params);
+
+  reports:
+      "$(this.bundle): running with parameters $(params_str)";
+}

@@ -1,0 +1,56 @@
+body file control
+{
+        inputs => { "$(sys.libdir)/stdlib.cf", @(tide_run.inputs) };
+}
+
+bundle common def
+{
+  vars:
+      "tide" data => '{
+  inputs: [ "$(this.promise_dirname)/../sketches/system/motd/main.cf" ],
+  run:
+  [
+    {
+      bundle: "motd",
+      parameters: { numbers: [ 1, 2, 3 ], "complex key": "complex data" }
+    }
+  ]
+}';
+}
+
+bundle agent tide_run()
+{
+  vars:
+      "inputs" slist => getvalues("def.tide[inputs]");
+      "run" data => mergedata("def.tide[run]");
+      "run_indices" slist => getindices(run);
+
+  methods:
+      "" usebundle => tide_run_one(@(run), $(run_indices));
+
+  reports:
+    inform_mode::
+      "$(this.bundle): TIDE Run stage";
+}
+
+bundle agent tide_run_one(definition, index)
+{
+  classes:
+      "can_call" and => { isvariable("runbundle"), isvariable("parameters") };
+  vars:
+      "invocation" data => mergedata("definition[$(index)]");
+      "invocation_str" string => format("%S", invocation);
+      "runbundle" string => nth(invocation, "bundle");
+      "parameters" data => mergedata("invocation[parameters]");
+      "parameters_str" string => format("%S", parameters);
+
+  methods:
+      "" usebundle => $(runbundle)(@(parameters));
+
+  reports:
+    !can_call::
+      "$(this.bundle): Can't call $(invocation_str): no bundle or no parameters";
+
+    inform_mode.can_call::
+      "$(this.bundle): Calling bundle $(runbundle) with parameters $(parameters_str)";
+}

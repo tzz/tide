@@ -1,0 +1,180 @@
+body file control
+{
+        inputs => { "$(sys.libdir)/stdlib.cf" };
+}
+
+bundle common def
+{
+  vars:
+      "tide" data => '{
+  sketchdirs: ["$(this.promise_dirname)/../sketches"],
+  force_install: true,
+  install: { "$(this.promise_dirname)/../sketches": [ "system/motd/sketch.json" ] },
+}';
+}
+
+bundle agent tide_setup(sketchdir)
+{
+  vars:
+      "sketchfiles" slist => findfiles("$(sketchdir)/**/sketch.json");
+  methods:
+      "" usebundle => tide_load($(sketchfiles), canonifyuniquely($(sketchfiles)));
+
+  reports:
+    verbose_mode::
+      "$(this.bundle): Found sketch $(sketchfiles)";
+}
+
+# The standard key is canonifyuniquely(sketchfile) but we can supply a different
+# key if we want to load without interfering with the standard load.
+bundle agent tide_load(sketchfile, key)
+{
+  classes:
+      "loaded_$(key)" expression => isvariable("definition_$(key)");
+      "have_metadata_$(key)" expression => isvariable("metadata_$(key)");
+      "have_manifest_$(key)" expression => isvariable("manifest_$(key)");
+      "have_name_$(key)" expression => isvariable("metadata_$(key)[name]"),
+        if => "have_metadata_$(key)";
+
+      "usable_$(key)" and => { "loaded_$(key)",
+                              "have_metadata_$(key)",
+                              "have_name_$(key)",
+      }, scope => "namespace";
+
+  vars:
+      "definition_$(key)" data => readjson($(sketchfile));
+      "metadata_$(key)" data => mergedata("definition_$(key)[metadata]"),
+        if => isvariable("definition_$(key)");
+      "name_$(key)" string => "$(metadata_$(key)[name])";
+      "manifest_$(key)" data => mergedata("definition_$(key)[manifest]"),
+        if => isvariable("definition_$(key)");
+
+      "byname" data => '{}';
+    "have_name_$(key)"::
+      "byname" data => mergedata('{ "$(metadata_$(key)[name])": "$(key)" }', byname);
+
+  reports:
+    verbose_mode::
+      "$(this.bundle): Found sketch $(sketchfile)";
+
+    "inform_mode.loaded_$(key)"::
+      "$(this.bundle): Loaded sketch $(sketchfile)";
+
+    "!loaded_$(key)"::
+      "$(this.bundle): Could not load sketch $(sketchfile)";
+
+    "!have_metadata_$(key)"::
+      "$(this.bundle): Could not load sketch metadata of $(sketchfile)";
+
+    "!have_manifest_$(key)"::
+      "$(this.bundle): Could not load sketch manifest of $(sketchfile)";
+}
+
+bundle agent tide_manage
+{
+  classes:
+      "tide_force_install" expression => "$(def.tide[force_install])", scope => "namespace";
+  vars:
+      "tide_main_sketchdir" string => nth("def.tide[sketchdirs]", 0);
+      "tide_inputs" slist => getvalues("def.tide[inputs]");
+
+  methods:
+      "" usebundle => tide_setup($(tide_main_sketchdir));
+      "" usebundle => tide_uninstall(@(def.tide));
+      "" usebundle => tide_install(@(def.tide));
+
+  reports:
+    inform_mode::
+      "$(this.bundle): TIDE management";
+}
+
+bundle agent tide_uninstall(definitions)
+{
+  reports:
+    inform_mode::
+      "$(this.bundle): TIDE Uninstall stage";
+}
+
+bundle agent tide_install(definitions)
+{
+  vars:
+      "installs" data => mergedata("definitions[install]");
+      "repositories" slist => getindices(installs);
+      "target_dir" string => "$(definitions[sketchdirs][0])";
+
+  methods:
+      "" usebundle => tide_install_sketches(@(installs), $(repositories), $(target_dir));
+
+  reports:
+    inform_mode::
+      "$(this.bundle): TIDE Install stage";
+      "$(this.bundle): TIDE Install stage: installing from repository $(repositories) to $(target_dir)";
+}
+
+bundle agent tide_install_sketches(installs, repository, sketchdir)
+{
+  vars:
+      "repo_installs" data => mergedata("installs[$(repository)]");
+      "repo_installs_str" string => format("%S", repo_installs);
+      "source_files" slist => getvalues(repo_installs);
+
+  methods:
+      "" usebundle => tide_install_sketch($(source_files), $(repository), $(sketchdir));
+
+  reports:
+    inform_mode::
+      "$(this.bundle): Installing sketches from repository $(repository) to $(sketchdir)";
+      "$(this.bundle): Installing sketches $(source_files) from repository $(repository) to $(sketchdir)";
+}
+
+bundle agent tide_install_sketch(source_file, repository, sketchdir)
+{
+  classes:
+      # install if there is no usable sketch by that name OR we are force-installing
+      "install_needed" not => "usable_$(dest_key)";
+      "install_possible" expression => "usable_$(source_key)";
+      "install_needed" expression => "tide_force_install";
+
+  vars:
+      "source_full_file" string => "$(repository)/$(source_file)";
+      "source_dir" string => dirname($(source_file));
+      # load with a prefix to avoid clashing with the internally known sketches
+      "source_key" string => concat("installation_temp_prefix_", canonifyuniquely($(source_full_file)));
+      "dest_file" string => "$(sketchdir)/$(source_file)";
+      "dest_key" string => canonifyuniquely($(dest_file));
+
+      "metadata" data => mergedata("tide_load.metadata_$(source_key)");
+      "manifest" data => mergedata("tide_load.manifest_$(source_key)");
+
+  methods:
+    install_needed::
+      "" usebundle => tide_load($(source_full_file), $(source_key));
+    install_needed.install_possible::
+      "" usebundle => tide_install_sketch_files(@(metadata), @(manifest), $(repository), $(source_dir), $(sketchdir));
+    installed_ok::
+      "" usebundle => tide_load($(dest_file), $(dest_key));
+
+  reports:
+    inform_mode::
+      "$(this.bundle): Installing sketch $(source_file) from repository $(repository) to $(dest_file)";
+    tide_force_install::
+      "$(this.bundle): Forcing installation because force_install is set";
+    "usable_$(dest_key)"::
+      "$(this.bundle): Sketch $(tide_load.name_$(dest_key)) is already installed and usable";
+}
+
+bundle agent tide_install_sketch_files(metadata, manifest, repository, source_dir, sketchdir)
+{
+  vars:
+      "todo" slist => { getindices(manifest), "sketch.json" };
+
+  methods:
+      "" usebundle => file_copy("$(repository)/$(source_dir)/$(todo)", "$(sketchdir)/$(source_dir)/$(todo)");
+
+  files:
+      "$(sketchdir)/$(source_dir)/$(todo)" perms => m("600");
+
+  reports:
+    inform_mode::
+      "$(this.bundle): Installing sketch files for $(metadata[name]) from repository $(repository) to $(sketchdir)";
+}

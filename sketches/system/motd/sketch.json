@@ -1,0 +1,16 @@
+{
+ manifest:
+ {
+  "main.cf": { lib: true, description: "main file" }
+ },
+
+ metadata:
+ {
+  name: "System::motd",
+  description: "Configure the Message of the Day",
+  version: "1.00",
+  license: "MIT",
+  tags: [ "tide_sketch" ],
+  authors: [ "Ted Zlatanov <tzz@lifelogs.com>" ]
+ },
+}
