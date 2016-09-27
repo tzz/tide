@@ -193,6 +193,7 @@ bundle agent tide_install_sketches(installs, repository, sketchdir)
 bundle agent tide_install_sketch(source_file, repository, sketchdir)
 {
   classes:
+      "install_possible" expression => "tide_usable_$(source_key)";
       # install if there is no usable sketch by that name OR we are force-installing
       "install_needed" not => "tide_usable_$(dest_key)";
       "install_needed" expression => "tide_force_install";
@@ -201,6 +202,7 @@ bundle agent tide_install_sketch(source_file, repository, sketchdir)
       "source_full_file" string => "$(repository)/$(source_file)";
       "source_dir" string => dirname($(source_file));
       "dest_full_file" string => "$(sketchdir)/$(source_file)";
+      "source_key" string => canonifyuniquely($(source_full_file));
       "dest_key" string => canonifyuniquely($(dest_full_file));
 
       "definition" data => readjson($(source_full_file));
@@ -210,7 +212,8 @@ bundle agent tide_install_sketch(source_file, repository, sketchdir)
         if => isvariable("definition");
 
   methods:
-    install_needed::
+      "" usebundle => tide_load($(repository), $(source_file), $(source_key));
+    install_possible.install_needed::
       "" usebundle => tide_install_sketch_files(@(metadata), @(manifest), $(repository), $(source_dir), $(sketchdir)),
         classes => scoped_classes_generic("bundle", "install");
     install_ok::
@@ -223,8 +226,10 @@ bundle agent tide_install_sketch(source_file, repository, sketchdir)
       "$(this.bundle): Forcing installation because force_install is set";
     "!install_ok.tide_usable_$(dest_key)"::
       "$(this.bundle): Sketch $(metadata[name]) is already installed and usable";
-    install_ok::
-      "$(this.bundle): Sketch $(metadata[name]) is now installed and usable";
+    install_possible::
+      "$(this.bundle): Sketch $(metadata[name]) can be installed ($(source_full_file) had valid data)";
+    "install_ok.tide_usable_$(dest_key)"::
+      "$(this.bundle): Sketch $(metadata[name]) is now installed and usable in $(dest_full_file)";
 }
 
 bundle agent tide_install_sketch_files(metadata, manifest, repository, source_dir, sketchdir)
