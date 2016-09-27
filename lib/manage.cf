@@ -18,7 +18,7 @@ bundle agent tide_setup(sketchdir)
   vars:
       "sketchfiles" slist => findfiles("$(sketchdir)/**/sketch.json");
   methods:
-      "" usebundle => tide_load($(sketchfiles), canonifyuniquely($(sketchfiles)));
+      "" usebundle => tide_load($(sketchdir), regex_replace($(sketchfiles), $(sketchdir), "", "T"), canonifyuniquely($(sketchfiles)));
 
   reports:
     verbose_mode::
@@ -27,7 +27,11 @@ bundle agent tide_setup(sketchdir)
 
 # The standard key is canonifyuniquely(sketchfile) but we can supply a different
 # key if we want to load without interfering with the standard load.
-bundle agent tide_load(sketchfile, key)
+#
+# For a sketch in /var/lib/sketches/system/motd/sketch.json, the sketchdir is
+# `/var/lib/sketches`, the sketchfile is `system/motd/sketch.json`, and the key
+# is up to the caller.
+bundle agent tide_load(sketchdir, basefile, key)
 {
   classes:
       "loaded_$(key)" expression => isvariable("definition_$(key)");
@@ -42,7 +46,10 @@ bundle agent tide_load(sketchfile, key)
       }, scope => "namespace";
 
   vars:
+      "sketchfile" string => "$(sketchdir)/$(basefile)";
       "definition_$(key)" data => readjson($(sketchfile));
+      "sketchdir_$(key)" string => $(sketchdir);
+      "dir_$(key)" string => dirname($(basefile));
       "metadata_$(key)" data => mergedata("definition_$(key)[metadata]"),
         if => isvariable("definition_$(key)");
       "name_$(key)" string => "$(metadata_$(key)[name])";
@@ -90,9 +97,51 @@ bundle agent tide_manage
 
 bundle agent tide_uninstall(definitions)
 {
+  vars:
+      "uninstalls" slist => getvalues("definitions[uninstall]");
+      "target_dir" slist => getvalues("definitions[sketchdirs]");
+
+  methods:
+      "" usebundle => tide_uninstall_sketch($(uninstalls), $(target_dir)),
+        if => isvariable(uninstalls);
+
   reports:
     inform_mode::
       "$(this.bundle): TIDE Uninstall stage";
+      "$(this.bundle): TIDE Uninstall stage: uninstalling $(uninstalls) from $(target_dir)"
+        if => isvariable(uninstalls);
+}
+
+bundle agent tide_uninstall_sketch(name, sketchdir)
+{
+  classes:
+      "sketch_known" expression => isvariable(key);
+      # uninstall if there is a usable sketch by that name
+      "uninstall_needed" expression => fileexists("$(basedir)/sketch.json");
+
+  vars:
+      "key" string => "$(tide_load.byname[$(name)])";
+
+      "basedir" string => "$(sketchdir)/$(tide_load.dir_$(key))";
+
+  methods:
+    uninstall_needed::
+      "" usebundle => tide_uninstall_sketch_files($(name), "$(basedir)"),
+        classes => results("bundle", "uninstall");
+
+  reports:
+    inform_mode::
+      "$(this.bundle): Uninstalling sketch $(name) from $(sketchdir)";
+    !sketch_known::
+      "$(this.bundle): Sketch $(name) is unknown, sorry";
+    uninstall_not_kept::
+      "$(this.bundle): Failed to uninstall sketch $(name) from $(sketchdir), sorry";
+}
+
+bundle agent tide_uninstall_sketch_files(name, basedir)
+{
+  methods:
+      "" usebundle => file_tidy("$(basedir)/");
 }
 
 bundle agent tide_install(definitions)
@@ -148,11 +197,12 @@ bundle agent tide_install_sketch(source_file, repository, sketchdir)
 
   methods:
     install_needed::
-      "" usebundle => tide_load($(source_full_file), $(source_key));
+      "" usebundle => tide_load($(repository), $(source_file), $(source_key));
     install_needed.install_possible::
-      "" usebundle => tide_install_sketch_files(@(metadata), @(manifest), $(repository), $(source_dir), $(sketchdir));
-    installed_ok::
-      "" usebundle => tide_load($(dest_file), $(dest_key));
+      "" usebundle => tide_install_sketch_files(@(metadata), @(manifest), $(repository), $(source_dir), $(sketchdir)),
+        classes => results("bundle", "install");
+    install_kept::
+      "" usebundle => tide_load($(sketchdir), $(source_file), $(dest_key));
 
   reports:
     inform_mode::
@@ -161,6 +211,8 @@ bundle agent tide_install_sketch(source_file, repository, sketchdir)
       "$(this.bundle): Forcing installation because force_install is set";
     "usable_$(dest_key)"::
       "$(this.bundle): Sketch $(tide_load.name_$(dest_key)) is already installed and usable";
+    install_kept::
+      "$(this.bundle): Sketch $(tide_load.name_$(dest_key)) is now installed and usable";
 }
 
 bundle agent tide_install_sketch_files(metadata, manifest, repository, source_dir, sketchdir)
