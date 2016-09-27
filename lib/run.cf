@@ -13,6 +13,12 @@ bundle common def
     {
       bundle: "motd",
       parameters: { numbers: [ 1, 2, 3 ], "complex key": "complex data" }
+    },
+    {
+      external: "/usr/bin/env ANSIBLE_HOSTS=/dev/null /usr/bin/ansible-playbook",
+      parameters: [ { hosts: "localhost", gather_facts: false, connection: "local",
+                      vars: { messages: [ "helloone", "hellotwo" ] },
+                      tasks: [ { debug: { msg: "hello {{ item }}" }, with_items: "{{ messages }}" } ] } ]
     }
   ]
 }';
@@ -33,24 +39,47 @@ bundle agent tide_run()
       "$(this.bundle): TIDE Run stage";
 }
 
+
+
 bundle agent tide_run_one(definition, index)
 {
   classes:
       "can_call" and => { isvariable("runbundle"), isvariable("parameters") };
+      "external" and => { isvariable("external"), isvariable("parameters") };
+
   vars:
       "invocation" data => mergedata("definition[$(index)]");
       "invocation_str" string => format("%S", invocation);
       "runbundle" string => nth(invocation, "bundle");
+      "external" string => nth(invocation, "external");
       "parameters" data => mergedata("invocation[parameters]");
       "parameters_str" string => format("%S", parameters);
 
   methods:
+    can_call::
       "" usebundle => $(runbundle)(@(parameters));
+    external::
+      "" usebundle => tide_run_external($(external), @(parameters));
 
   reports:
-    !can_call::
-      "$(this.bundle): Can't call $(invocation_str): no bundle or no parameters";
+    !can_call.!external::
+      "$(this.bundle): Can't call $(invocation_str): no bundle or external, and no parameters";
 
     inform_mode.can_call::
       "$(this.bundle): Calling bundle $(runbundle) with parameters $(parameters_str)";
+    inform_mode.external::
+      "$(this.bundle): Calling external command $(external) with parameters $(parameters_str)";
+}
+
+bundle agent tide_run_external(command, parameters)
+{
+  vars:
+      "tmpfile" string => format("/tmp/tide-%s.yaml", canonify(command));
+  methods:
+      "" usebundle => file_make($(tmpfile), storejson(parameters)),
+        handle => "tide_external_file_make";
+
+  commands:
+      "$(command) $(tmpfile)"
+        depends_on => { "tide_external_file_make" };
 }
