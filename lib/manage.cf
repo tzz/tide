@@ -3,6 +3,8 @@ body file control
         inputs => { "$(sys.libdir)/stdlib.cf" };
 }
 
+@if minimum_version(3.9)
+
 bundle common def
 {
   vars:
@@ -242,3 +244,5 @@ bundle agent tide_install_sketch_files(metadata, manifest, repository, source_di
     inform_mode::
       "$(this.bundle): Installing sketch files for $(metadata[name]) from repository $(repository) to $(sketchdir): $(todo_str)";
 }
+
+@endif
