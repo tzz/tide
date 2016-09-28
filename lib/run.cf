@@ -18,7 +18,9 @@ bundle common def
       external: "/usr/bin/env ANSIBLE_HOSTS=/dev/null /usr/bin/ansible-playbook",
       parameters: [ { hosts: "localhost", gather_facts: false, connection: "local",
                       vars: { messages: [ "helloone", "hellotwo" ] },
-                      tasks: [ { debug: { msg: "hello {{ item }}" }, with_items: "{{ messages }}" } ] } ]
+                      tasks: [
+                               { debug: { msg: "hello {{ item }}" }, with_items: "{{ messages }}" }
+                      ] } ]
     }
   ]
 }';
@@ -44,8 +46,8 @@ bundle agent tide_run()
 bundle agent tide_run_one(definition, index)
 {
   classes:
-      "can_call" and => { isvariable("runbundle"), isvariable("parameters") };
-      "external" and => { isvariable("external"), isvariable("parameters") };
+      "can_call" and => { isvariable("invocation[bundle]"), isvariable("invocation[parameters]") };
+      "external" and => { isvariable("invocation[external]"), isvariable("invocation[parameters]") };
 
   vars:
       "invocation" data => mergedata("definition[$(index)]");
@@ -74,12 +76,16 @@ bundle agent tide_run_one(definition, index)
 bundle agent tide_run_external(command, parameters)
 {
   vars:
-      "tmpfile" string => format("/tmp/tide-%s.yaml", canonify(command));
+      "tmpfile" string => format("/tmp/tide_%s_%s.json", hash($(command), "sha1"), canonify(strftime(localtime, "%F-%T", now())));
+
   methods:
       "" usebundle => file_make($(tmpfile), storejson(parameters)),
         handle => "tide_external_file_make";
+      "" usebundle => rm_rf($(tmpfile)),
+        depends_on => { "tide_external_command" };
 
   commands:
       "$(command) $(tmpfile)"
+        handle => "tide_external_command",
         depends_on => { "tide_external_file_make" };
 }
