@@ -3,29 +3,6 @@ body file control
         inputs => { "$(sys.libdir)/stdlib.cf", @(tide_run.inputs) };
 }
 
-bundle common def
-{
-  vars:
-      "tide" data => '{
-  inputs: [ "$(this.promise_dirname)/../sketches/system/motd/main.cf" ],
-  run:
-  [
-    {
-      bundle: "motd",
-      parameters: { numbers: [ 1, 2, 3 ], "complex key": "complex data" }
-    },
-    {
-      external: "/usr/bin/env ANSIBLE_HOSTS=/dev/null /usr/bin/ansible-playbook",
-      parameters: [ { hosts: "localhost", gather_facts: false, connection: "local",
-                      vars: { messages: [ "helloone", "hellotwo" ] },
-                      tasks: [
-                               { debug: { msg: "hello {{ item }}" }, with_items: "{{ messages }}" }
-                      ] } ]
-    }
-  ]
-}';
-}
-
 bundle agent tide_run()
 {
   vars:

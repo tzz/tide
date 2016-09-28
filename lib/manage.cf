@@ -5,17 +5,6 @@ body file control
 
 @if minimum_version(3.9)
 
-bundle common def
-{
-  vars:
-      "tide" data => '{
-  sketchdirs: ["/tmp/tide/sketches"],
-  force_install: true,
-  install: { "$(this.promise_dirname)/../sketches": [ "system/motd/sketch.json" ] },
-  uninstall: [ "System::motd" ],
-}';
-}
-
 bundle agent tide_setup(sketchdir)
 {
   vars:

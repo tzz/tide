@@ -1,0 +1,33 @@
+body common control
+{
+        bundlesequence => { def, tide_run };
+}
+
+body file control
+{
+        inputs => { "$(def.mydir)/../lib/run.cf" };
+}
+
+bundle common def
+{
+  vars:
+      "mydir" string => "$(this.promise_dirname)";
+      "tide" data => '{
+  inputs: [ "$(this.promise_dirname)/../sketches/system/motd/main.cf" ],
+  run:
+  [
+    {
+      bundle: "motd",
+      parameters: { numbers: [ 1, 2, 3 ], "complex key": "complex data" }
+    },
+    {
+      external: "/usr/bin/env ANSIBLE_HOSTS=/dev/null /usr/bin/ansible-playbook",
+      parameters: [ { hosts: "localhost", gather_facts: false, connection: "local",
+                      vars: { messages: [ "helloone", "hellotwo" ] },
+                      tasks: [
+                               { debug: { msg: "hello {{ item }}" }, with_items: "{{ messages }}" }
+                      ] } ]
+    }
+  ]
+}';
+}

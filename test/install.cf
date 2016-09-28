@@ -1,0 +1,20 @@
+body common control
+{
+        bundlesequence => { def, tide_manage };
+}
+
+body file control
+{
+        inputs => { "$(def.mydir)/../lib/manage.cf" };
+}
+
+bundle common def
+{
+  vars:
+      "mydir" string => "$(this.promise_dirname)";
+      "tide" data => '{
+  sketchdirs: ["/tmp/tide/sketches"],
+  force_install: true,
+  install: { "$(this.promise_dirname)/../sketches": [ "system/motd/sketch.json" ] },
+}';
+}
